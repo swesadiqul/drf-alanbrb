@@ -15,43 +15,77 @@ class RegistrationView(APIView):
 
     def post(self, request):
         serializer = self.serializer_class(data=request.data, context={'request': request})
+
         if serializer.is_valid():
-            email = serializer.validated_data.get('email')
-            name = serializer.validated_data.get('name')
-            user = serializer.save()
-            
-            otp = send_email([email], name)
-            if otp:
-                user.otp = otp
-                user.otp_expiry = now() + timedelta(minutes=2)
-                user.save()
-                return Response(
-                    {
-                        "status": "success",
-                        "message": "User registered successfully.",
-                        "code": status.HTTP_201_CREATED,
-                        "data": serializer.data,
-                    },
-                    status=status.HTTP_201_CREATED,
-                )
-            else:
+            role = serializer.validated_data.get("role", User.Role.ADMIN)  # Default to Admin
+            email = serializer.validated_data.get("email")
+            name = serializer.validated_data.get("name")
+
+            # Prevent non-Super Admin users from creating another Super Admin
+            if role == User.Role.SUPER_ADMIN:
+                # Check if the user is authenticated and if they are a Super Admin
+                if not request.user.is_authenticated or not hasattr(request.user, 'is_super_admin') or not request.user.is_super_admin():
+                    return Response(
+                        {
+                            "status": "error",
+                            "message": "Only Super Admins can create another Super Admin.",
+                            "code": status.HTTP_403_FORBIDDEN,
+                        },
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+
+            try:
+                # Create user
+                user = serializer.save()
+
+                # Send OTP via email
+                otp = send_email([email], name)
+                if otp:
+                    user.otp = otp
+                    user.otp_expiry = now() + timedelta(minutes=2)
+                    user.save()
+                    return Response(
+                        {
+                            "status": "success",
+                            "code": status.HTTP_201_CREATED,
+                            "message": "User registered successfully. OTP sent.",
+                            "data": serializer.data,
+                        },
+                        status=status.HTTP_201_CREATED,
+                    )
+                else:
+                    # If email sending fails, delete the user to prevent orphan accounts
+                    user.delete()
+                    return Response(
+                        {
+                            "status": "error",
+                            "code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            "message": "User creation failed: OTP email not sent.",
+                        },
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+
+            except Exception as e:
                 return Response(
                     {
                         "status": "error",
-                        "message": "Failed to send OTP.",
                         "code": status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        "message": "User registration failed.",
+                        "detail": str(e),
                     },
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
+
         return Response(
             {
                 "status": "error",
-                "message": "Invalid input data.",
                 "code": status.HTTP_400_BAD_REQUEST,
+                "message": "Invalid input data.",
                 "detail": serializer.errors,
             },
             status=status.HTTP_400_BAD_REQUEST,
         )
+
 
 
 class SendOTPView(APIView):
@@ -194,7 +228,6 @@ class LogoutView(APIView):
                     "status": "success",
                     "code": status.HTTP_200_OK,
                     "message": "User logged out successfully.",
-                    "data": None
                 },
                 status=status.HTTP_200_OK
             )
@@ -250,47 +283,47 @@ class ChangePasswordView(APIView):
         )
 
 
+# class PasswordResetView(APIView):
+#     serializer_class = PasswordResetSerializer
+
+#     def post(self, request):
+#         serializer = self.serializer_class(data=request.data)
+#         if serializer.is_valid():
+#             email = serializer.validated_data.get('email')
+#             try:
+#                 user = User.objects.get(email=email)
+#                 user.otp = send_email([email], user.name)
+#                 user.otp_expiry = now() + timedelta(minutes=2)
+#                 user.save()
+#                 return Response(
+#                     {
+#                         "status": "success",
+#                         "code": status.HTTP_200_OK,
+#                         "message": "OTP sent successfully!"
+#                     },
+#                     status=status.HTTP_200_OK
+#                 )
+#             except User.DoesNotExist:
+#                 return Response(
+#                     {
+#                         "status": "error",
+#                         "code": status.HTTP_404_NOT_FOUND,
+#                         "message": "No account found with the provided email."
+#                     },
+#                     status=status.HTTP_404_NOT_FOUND
+#                 )
+#         return Response(
+#             {
+#                 "status": "error",
+#                 "message": "Invalid email address provided.",
+#                 "code": status.HTTP_400_BAD_REQUEST,
+#                 "errors": serializer.errors
+#             },
+#             status=status.HTTP_400_BAD_REQUEST
+#         )
+
+
 class PasswordResetView(APIView):
-    serializer_class = PasswordResetSerializer
-
-    def post(self, request):
-        serializer = self.serializer_class(data=request.data)
-        if serializer.is_valid():
-            email = serializer.validated_data.get('email')
-            try:
-                user = User.objects.get(email=email)
-                user.otp = send_email([email], user.name)
-                user.otp_expiry = now() + timedelta(minutes=2)
-                user.save()
-                return Response(
-                    {
-                        "status": "success",
-                        "code": status.HTTP_200_OK,
-                        "message": "OTP sent successfully!"
-                    },
-                    status=status.HTTP_200_OK
-                )
-            except User.DoesNotExist:
-                return Response(
-                    {
-                        "status": "error",
-                        "code": status.HTTP_404_NOT_FOUND,
-                        "message": "No account found with the provided email."
-                    },
-                    status=status.HTTP_404_NOT_FOUND
-                )
-        return Response(
-            {
-                "status": "error",
-                "message": "Invalid email address provided.",
-                "code": status.HTTP_400_BAD_REQUEST,
-                "errors": serializer.errors
-            },
-            status=status.HTTP_400_BAD_REQUEST
-        )
-
-
-class PasswordResetConfirmView(APIView):
     serializer_class = PasswordResetConfirmSerializer
 
     def post(self, request):
@@ -370,7 +403,7 @@ class UserListView(APIView):
             status=status.HTTP_400_BAD_REQUEST)
 
 
-class UserProfileView(APIView):
+class ProfileView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
     serializer_class = UserSerializer
@@ -383,7 +416,7 @@ class UserProfileView(APIView):
                 {
                     "status": "success",
                     "code": status.HTTP_200_OK,
-                    "message": f"User with ID {user.id} retrieved successfully.",
+                    "message": "User retrieved successfully.",
                     "data": serializer.data
                 },
                 status=status.HTTP_200_OK,
@@ -393,12 +426,10 @@ class UserProfileView(APIView):
                 {
                     "status": "error",
                     "code": status.HTTP_404_NOT_FOUND,
-                    "message": f"User does not exist.",
+                    "message": "User does not exist."
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )
-
-
 
 
 class UserDetailView(APIView):
@@ -414,7 +445,7 @@ class UserDetailView(APIView):
                 {
                     "status": "success",
                     "code": status.HTTP_200_OK,
-                    "message": f"User with ID {pk} retrieved successfully.",
+                    "message": "User retrieved successfully.",
                     "data": serializer.data
                 },
                 status=status.HTTP_200_OK,
@@ -424,7 +455,7 @@ class UserDetailView(APIView):
                 {
                     "status": "error",
                     "code": status.HTTP_404_NOT_FOUND,
-                    "message": f"User with ID {pk} does not exist.",
+                    "message": "User does not exist.",
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )
@@ -439,7 +470,7 @@ class UserDetailView(APIView):
                     {
                         "status": "success",
                         "code": status.HTTP_200_OK,
-                        "message": f"User with ID {pk} updated successfully.",
+                        "message": "User updated successfully.",
                         "data": serializer.data
                     },
                     status=status.HTTP_200_OK,
@@ -458,7 +489,7 @@ class UserDetailView(APIView):
                 {
                     "status": "error",
                     "code": status.HTTP_404_NOT_FOUND,
-                    "message": f"User with ID {pk} does not exist.",
+                    "message": "User does not exist.",
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )
@@ -471,7 +502,7 @@ class UserDetailView(APIView):
                 {
                     "status": "success",
                     "code": status.HTTP_200_OK,
-                    "message": f"User with ID {pk} deleted successfully.",
+                    "message": "User deleted successfully.",
                 },
                 status=status.HTTP_200_OK,
             )
@@ -480,7 +511,7 @@ class UserDetailView(APIView):
                 {
                     "status": "error",
                     "code": status.HTTP_404_NOT_FOUND,
-                    "message": f"User with ID {pk} does not exist.",
+                    "message": "User does not exist.",
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )

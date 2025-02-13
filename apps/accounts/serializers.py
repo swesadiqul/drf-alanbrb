@@ -9,29 +9,29 @@ from rest_framework_simplejwt.tokens import RefreshToken, TokenError
 
 class RegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
-    image = serializers.SerializerMethodField()
-
+    role = serializers.ChoiceField(choices=User.Role.choices, default=User.Role.ADMIN)
 
     class Meta:
         model = User
-        fields = ['id', 'name', 'email', 'password', 'image', 'date_joined', 'last_login']
-        read_only_fields = ['id', 'image', 'date_joined', 'last_login']
+        fields = ['name', 'email', 'role', 'password']
+
+    def validate_role(self, value):
+        """Ensure only Super Admins can create other Super Admins."""
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            if value == User.Role.SUPER_ADMIN and not request.user.is_super_admin():
+                raise serializers.ValidationError("Only Super Admins can create another Super Admin.")
+        else:
+            # In case there's no authenticated user (e.g., anonymous user)
+            if value == User.Role.SUPER_ADMIN:
+                raise serializers.ValidationError("Only authenticated Super Admins can create another Super Admin.")
+        return value
 
     def create(self, validated_data):
-        password = validated_data.pop('password', None)
-        user = User(**validated_data)
-
-        if password:
-            user.set_password(password)
-        
-        user.save()
+        """Create a new user with the specified role and hashed password."""
+        user = User.objects.create_user(**validated_data)
         return user
-    
-    def get_image(self, obj):
-        request = self.context.get('request')
-        if obj.image and request:
-            return request.build_absolute_uri(obj.image.url)
-        return None
+
         
 
 class SendOTPSerializer(serializers.Serializer):
@@ -126,12 +126,12 @@ class LogoutSerializer(serializers.Serializer):
 
 class UserSerializer(serializers.ModelSerializer):
     image = serializers.ImageField(required=False)
-    password = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
-        fields = ['id', 'name', 'email', "image", 'password', 'date_joined', 'last_login']
-        read_only_fields = ['id', 'email', 'date_joined', 'last_login']
+        fields = ['id', 'name', 'email', 'bio', 'role', "image", 'date_joined', 'last_login']
+        # fields = '__all__'
+        # read_only_fields = ['id', 'email', 'date_joined', 'last_login']
 
     def get_image(self, obj):
         request = self.context.get('request')
@@ -139,16 +139,6 @@ class UserSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(obj.image.url)
         return None
     
-
-    def update(self, instance, validated_data):
-        password = validated_data.pop('password', None)
-        instance = super().update(instance, validated_data)
-        if password:
-            instance.set_password(password)
-            instance.save()
-        return instance
-
-
 
 class ChangePasswordSerializer(serializers.ModelSerializer):
     old_password = serializers.CharField(write_only=True, required=True, style={'input_type': 'password'})

@@ -15,9 +15,9 @@ def send_email(recipient_list, recipient_name):
     html_message = render_to_string('accounts/send-otp.html', {
         'otp_code': otp_code,
         'name': recipient_name,
-        'company_name': 'devisdebard',
+        'company_name': 'alanbrb',
         'support_email': 'support@example.com',
-        'website_url': 'http://localhost:8000'
+        'website_url': 'http://localhost:7000'
     })
     
     from_email = settings.EMAIL_HOST_USER
