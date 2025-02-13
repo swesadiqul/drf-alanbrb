@@ -154,22 +154,9 @@ class ChangePasswordSerializer(serializers.ModelSerializer):
         if data['new_password'] != data['confirm_password']:
             raise ValidationError("Passwords do not match.")
         return data
-
+    
 
 class PasswordResetSerializer(serializers.Serializer):
-    email = serializers.EmailField()
-
-    class Meta:
-        fields = ['email']
-    
-    def validate_email(self, email):
-        email = email.lower()
-        if not User.objects.filter(email=email).exists():
-            raise ValidationError("The provided email does not exist.")
-        return email
-    
-
-class PasswordResetConfirmSerializer(serializers.Serializer):
     email = serializers.EmailField()
     new_password = serializers.CharField()
     confirm_password = serializers.CharField()

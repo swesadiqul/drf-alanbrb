@@ -283,48 +283,8 @@ class ChangePasswordView(APIView):
         )
 
 
-# class PasswordResetView(APIView):
-#     serializer_class = PasswordResetSerializer
-
-#     def post(self, request):
-#         serializer = self.serializer_class(data=request.data)
-#         if serializer.is_valid():
-#             email = serializer.validated_data.get('email')
-#             try:
-#                 user = User.objects.get(email=email)
-#                 user.otp = send_email([email], user.name)
-#                 user.otp_expiry = now() + timedelta(minutes=2)
-#                 user.save()
-#                 return Response(
-#                     {
-#                         "status": "success",
-#                         "code": status.HTTP_200_OK,
-#                         "message": "OTP sent successfully!"
-#                     },
-#                     status=status.HTTP_200_OK
-#                 )
-#             except User.DoesNotExist:
-#                 return Response(
-#                     {
-#                         "status": "error",
-#                         "code": status.HTTP_404_NOT_FOUND,
-#                         "message": "No account found with the provided email."
-#                     },
-#                     status=status.HTTP_404_NOT_FOUND
-#                 )
-#         return Response(
-#             {
-#                 "status": "error",
-#                 "message": "Invalid email address provided.",
-#                 "code": status.HTTP_400_BAD_REQUEST,
-#                 "errors": serializer.errors
-#             },
-#             status=status.HTTP_400_BAD_REQUEST
-#         )
-
-
 class PasswordResetView(APIView):
-    serializer_class = PasswordResetConfirmSerializer
+    serializer_class = PasswordResetSerializer
 
     def post(self, request):
         serializer = self.serializer_class(data=request.data)
@@ -369,7 +329,6 @@ class UserListView(APIView):
     serializer_class = UserSerializer
 
     def get(self, request):
-        # users = User.objects.get(id=request.user.id)
         users = User.objects.all()
         serializer = self.serializer_class(users, context={'request': request}, many = True)
         return Response(
